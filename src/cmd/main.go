@@ -41,13 +41,20 @@ func main() {
 	UserRepo := repository.NewUserRepo(dbpool)
 	ForumRepo := repository.NewForumRepository(dbpool)
 	ThreadRepo := repository.NewThreadRepository(dbpool)
+	PostsRepo := repository.NewPostRepo(dbpool)
+	ServiceRepo := repository.NewServiceRepo(dbpool)
+	VoteRepo := repository.NewVoteRepository(dbpool)
 
 	ForumUseCase := usecase.NewForumUseCase(ForumRepo, UserRepo)
 	ThreadUseCase := usecase.NewThreadUseCase(ThreadRepo, UserRepo, ForumRepo)
+	PostsUseCase := usecase.NewPostUseCase(PostsRepo, ForumRepo)
 
-	UserDelivery := delivery.NewUserDelivery(UserRepo)
+	UserDelivery := delivery.NewUserDelivery(UserRepo, ForumRepo)
 	ForumDelivery := delivery.NewForumDelivery(ForumUseCase)
 	ThreadDelivery := delivery.NewThreadDelivery(ThreadUseCase)
+	PostsDelivery := delivery.NewPostDelivery(PostsUseCase, ThreadUseCase, ForumUseCase, UserRepo)
+	ServiceDelivery := delivery.NewServiceDelivery(ServiceRepo)
+	VoteDelivery := delivery.NewVoteDelivery(VoteRepo, UserRepo, ThreadUseCase)
 
 	r := chi.NewRouter()
 	r.Use(ContentTypeSetter)
@@ -58,6 +65,7 @@ func main() {
 			r.Post("/{slug}/create", ThreadDelivery.Create)
 			r.Get("/{slug}/details", ForumDelivery.Get)
 			r.Get("/{slug}/threads", ThreadDelivery.GetByForum)
+			r.Get("/{slug}/users", UserDelivery.GetByForum)
 		})
 
 		r.Route("/user", func(r chi.Router) {
@@ -68,7 +76,20 @@ func main() {
 
 		r.Route("/thread", func(r chi.Router) {
 			r.Get("/{slugOrId}/details", ThreadDelivery.Get)
-			r.Get("/{slugOrId}/details", ThreadDelivery.Update)
+			r.Post("/{slugOrId}/details", ThreadDelivery.Update)
+			r.Post("/{slugOrId}/create", PostsDelivery.Create)
+			r.Get("/{slugOrId}/posts", PostsDelivery.GetByThread)
+			r.Post("/{slugOrId}/vote", VoteDelivery.Vote)
+		})
+
+		r.Route("/post", func(r chi.Router) {
+			r.Get("/{id}/details", PostsDelivery.Get)
+			r.Post("/{id}/details", PostsDelivery.Update)
+		})
+
+		r.Route("/service", func(r chi.Router) {
+			r.Post("/clear", ServiceDelivery.Clear)
+			r.Get("/status", ServiceDelivery.Status)
 		})
 	})
 

@@ -26,8 +26,9 @@ func NewThreadRepository(dbpool *pgxpool.Pool) *ThreadRepository {
 
 func (repo *ThreadRepository) GetBySlug(slug string) (*models.Thread, error) {
 	var thread models.Thread
+	var created time.Time
 	err := repo.dbpool.QueryRow(context.Background(),
-		`SELECT t.id, t.title, u.nickname, f.title,
+		`SELECT t.id, t.title, u.nickname, f.slug, f.id,
 		t.message, t.votes_cnt, t.slug, t.created_at
 		FROM Threads t 
 		JOIN users u ON t.author_id = u.id
@@ -38,11 +39,14 @@ func (repo *ThreadRepository) GetBySlug(slug string) (*models.Thread, error) {
 			&thread.Title,
 			&thread.Author,
 			&thread.Forum,
+			&thread.ForumId,
 			&thread.Message,
 			&thread.Votes,
 			&thread.Slug,
-			&thread.Created,
+			&created,
 		)
+
+	thread.Created = created.Format("2006-01-02T15:04:05.000Z")
 
 	if err == nil {
 		return &thread, nil
@@ -57,8 +61,9 @@ func (repo *ThreadRepository) GetBySlug(slug string) (*models.Thread, error) {
 
 func (repo *ThreadRepository) GetById(id string) (*models.Thread, error) {
 	var thread models.Thread
+	var created time.Time
 	err := repo.dbpool.QueryRow(context.Background(),
-		`SELECT t.id, t.title, u.nickname, f.title,
+		`SELECT t.id, t.title, u.nickname, f.slug, f.id,
 		t.message, t.votes_cnt, t.slug, t.created_at
 		FROM Threads t 
 		JOIN users u ON t.author_id = u.id
@@ -69,11 +74,14 @@ func (repo *ThreadRepository) GetById(id string) (*models.Thread, error) {
 			&thread.Title,
 			&thread.Author,
 			&thread.Forum,
+			&thread.ForumId,
 			&thread.Message,
 			&thread.Votes,
 			&thread.Slug,
-			&thread.Created,
+			&created,
 		)
+
+	thread.Created = created.Format("2006-01-02T15:04:05.000Z")
 
 	if err == nil {
 		return &thread, nil
@@ -87,7 +95,7 @@ func (repo *ThreadRepository) GetById(id string) (*models.Thread, error) {
 }
 
 func (repo *ThreadRepository) GetByForum(forumId int, since string, desc bool, limit int) ([]*models.Thread, error) {
-	query := `SELECT t.id, t.title, u.nickname, f.slug,
+	query := `SELECT t.id, t.title, u.nickname, f.slug, f.id,
 	t.message, t.votes_cnt, t.slug, t.created_at::timestamptz
 	FROM Threads t 
 	JOIN users u ON t.author_id = u.id
@@ -96,8 +104,6 @@ func (repo *ThreadRepository) GetByForum(forumId int, since string, desc bool, l
 
 	var rows pgx.Rows
 	var err error
-
-	fmt.Println(since, desc, limit)
 
 	if since != "" {
 		if desc {
@@ -124,8 +130,6 @@ func (repo *ThreadRepository) GetByForum(forumId int, since string, desc bool, l
 			limit)
 	}
 
-	fmt.Println(query)
-
 	if err != nil {
 		return nil, err
 	}
@@ -142,13 +146,14 @@ func (repo *ThreadRepository) GetByForum(forumId int, since string, desc bool, l
 			&thread.Title,
 			&thread.Author,
 			&thread.Forum,
+			&thread.ForumId,
 			&thread.Message,
 			&thread.Votes,
 			&thread.Slug,
 			&created,
 		)
 
-		thread.Created = created.Format("2006-01-02T15:04:05.0000000000Z")
+		thread.Created = created.Format("2006-01-02T15:04:05.000Z")
 
 		if err != nil {
 			log.Fatal(err)
@@ -162,12 +167,15 @@ func (repo *ThreadRepository) GetByForum(forumId int, since string, desc bool, l
 
 func (repo *ThreadRepository) Create(thread *models.Thread, author_id int, forum_id int) error {
 	var err error
+
 	if thread.Created != "" {
 		timeParseLayout := "2006-01-02T15:04:05.000-07:00"
-		time, err := time.Parse(timeParseLayout, thread.Created)
-		thread.Created = time.UTC().Format("2006-01-02T15:04:05.0000000000Z")
+		time, t_err := time.Parse(timeParseLayout, thread.Created)
+		thread.Created = time.UTC().Format("2006-01-02T15:04:05.000Z")
 
-		if err != nil {
+		fmt.Println("CREATED:", thread.Created)
+
+		if t_err != nil {
 			log.Fatal(err)
 		}
 
@@ -202,11 +210,29 @@ func (repo *ThreadRepository) Create(thread *models.Thread, author_id int, forum
 		return err
 	}
 
-	thread, err = repo.GetBySlug(thread.Slug)
+	var created time.Time
 
+	err = repo.dbpool.QueryRow(context.Background(),
+		`SELECT t.id, t.title, u.nickname, f.slug,
+			 t.message, t.votes_cnt, t.slug, t.created_at
+	 FROM threads t JOIN users u ON t.author_id = u.id
+					JOIN forums f ON t.forum_id  = f.id
+	 WHERE lower(t.slug) = lower($1)`, thread.Slug).
+		Scan(
+			&thread.Id,
+			&thread.Title,
+			&thread.Author,
+			&thread.Forum,
+			&thread.Message,
+			&thread.Votes,
+			&thread.Slug,
+			&created,
+		)
 	if err != nil {
 		return err
 	}
+
+	thread.Created = created.Format("2006-01-02T15:04:05.000Z")
 
 	return models.ErrAlreadyExists
 }
@@ -215,8 +241,8 @@ func (repo *ThreadRepository) Update(thread *models.Thread) error {
 	_, err := repo.dbpool.Exec(context.Background(),
 		`UPDATE Threads SET 
 						title = $1,
-						message = $2,
-						WHERE id = $3`, thread.Title, thread.Message)
+						message = $2
+						WHERE id = $3`, thread.Title, thread.Message, thread.Id)
 
 	if err == nil {
 		return nil

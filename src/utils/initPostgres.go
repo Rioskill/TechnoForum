@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -36,4 +37,22 @@ func InitPostgres() (*pgxpool.Pool, error) {
 	}
 
 	return db, nil
+}
+
+func MakeTx(db *pgxpool.Pool, fb func(tx pgx.Tx) error) error {
+	tx, err := db.Begin(context.Background())
+	if err != nil {
+		return err
+	}
+
+	err = fb(tx)
+	if err != nil {
+		rollBackErr := tx.Rollback(context.Background())
+		if rollBackErr != nil {
+			return rollBackErr
+		}
+		return err
+	}
+
+	return tx.Commit(context.Background())
 }

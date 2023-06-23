@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"fmt"
 	"techno-forum/src/models"
 	"techno-forum/src/repository"
 	"techno-forum/src/utils"
@@ -31,6 +32,8 @@ func (usecase *ThreadUseCase) Create(thread *models.Thread, forumSlug string) er
 		return err
 	}
 
+	thread.Author = user.Nickname
+	thread.Forum = forum.Slug
 	return usecase.ThreadRepo.Create(thread, user.Id, forum.Id)
 }
 
@@ -55,14 +58,23 @@ func (usecase *ThreadUseCase) Update(thread *models.Thread, slugOrId string) err
 	var foundThread *models.Thread
 	var err error
 	if utils.IsNumeric(slugOrId) {
-		foundThread, err = usecase.ThreadRepo.GetById(thread.Slug)
+		foundThread, err = usecase.ThreadRepo.GetById(slugOrId)
 	} else {
-		foundThread, err = usecase.ThreadRepo.GetBySlug(thread.Slug)
+		foundThread, err = usecase.ThreadRepo.GetBySlug(slugOrId)
 	}
 
 	if err != nil {
 		return err
 	}
+
+	fmt.Println("FOUND:", foundThread)
+
+	thread.Id = foundThread.Id
+	thread.Slug = foundThread.Slug
+	thread.Forum = foundThread.Forum
+	thread.Author = foundThread.Author
+	thread.Votes = foundThread.Votes
+	thread.Created = foundThread.Created
 
 	if thread.Title == "" {
 		thread.Title = foundThread.Title

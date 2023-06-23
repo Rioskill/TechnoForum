@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi"
 
@@ -14,12 +15,14 @@ import (
 )
 
 type UserDelivery struct {
-	repo *repository.UserRepository
+	repo      *repository.UserRepository
+	ForumRepo *repository.ForumRepository
 }
 
-func NewUserDelivery(repo *repository.UserRepository) *UserDelivery {
+func NewUserDelivery(repo *repository.UserRepository, ForumRepo *repository.ForumRepository) *UserDelivery {
 	return &UserDelivery{
-		repo: repo,
+		repo:      repo,
+		ForumRepo: ForumRepo,
 	}
 }
 
@@ -109,6 +112,63 @@ func (delivery *UserDelivery) GetByNickName(w http.ResponseWriter, r *http.Reque
 		}
 		return
 	}
+}
+
+func (delivery *UserDelivery) GetByForum(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	forum, err := delivery.ForumRepo.Get(slug)
+
+	if err == models.ErrNotFound {
+		w.WriteHeader(404)
+		status, err := w.Write([]byte(MakeErrorMsg("forum not found")))
+
+		if err != nil {
+			log.Fatal(status, err)
+		}
+		return
+	}
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	limitStr := r.URL.Query().Get("limit")
+	since := r.URL.Query().Get("since")
+	descStr := r.URL.Query().Get("desc")
+
+	var limit int
+
+	if limitStr == "" {
+		limit = 100
+	} else {
+		limit, err = strconv.Atoi(limitStr)
+	}
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	desc := descStr == "true"
+
+	users, err := delivery.repo.GetByForum(forum.Id, limit, since, desc)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	res, err := json.Marshal(users)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	w.WriteHeader(200)
+	status, err := w.Write(res)
+
+	if err != nil {
+		log.Fatal(status, err)
+	}
+	return
 }
 
 func (delivery *UserDelivery) Update(w http.ResponseWriter, r *http.Request) {

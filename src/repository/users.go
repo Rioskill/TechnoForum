@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"techno-forum/src/models"
 
@@ -86,6 +87,59 @@ func (repo *UserRepository) GetByNickName(nickname string) (*models.User, error)
 	}
 
 	return res, nil
+}
+
+func (repo *UserRepository) GetByForum(forumId int, limit int, since string, desc bool) ([]*models.User, error) {
+	query := `SELECT u.id, u.nickname, u.fullname, u.about, u.email
+				FROM users u JOIN ForumUserLinks uf ON u.id = uf.user_id
+							JOIN forums f ON f.id = uf.forum_id
+				WHERE f.id = $1 `
+
+	args := []interface{}{forumId}
+
+	if since != "" {
+		query += "AND lower(u.nickname) "
+		args = append(args, since)
+
+		if !desc {
+			query += "> lower($2)"
+		} else {
+			query += "< lower($2)"
+		}
+	}
+
+	query += " ORDER BY lower(u.nickname)"
+	if desc {
+		query += " DESC"
+	}
+
+	args = append(args, limit)
+	query += fmt.Sprintf(" LIMIT $%d", len(args))
+
+	rows, err := repo.dbpool.Query(context.Background(), query, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	users, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (*models.User, error) {
+		var user models.User
+		err := row.Scan(
+			&user.Id,
+			&user.Nickname,
+			&user.Fullname,
+			&user.About,
+			&user.Email,
+		)
+		return &user, err
+	})
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return users, nil
+		}
+		return nil, err
+	}
+
+	return users, nil
 }
 
 func (repo *UserRepository) Update(profile *models.User) error {
