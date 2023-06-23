@@ -95,58 +95,62 @@ func (repo *ThreadRepository) GetById(id string) (*models.Thread, error) {
 }
 
 func (repo *ThreadRepository) GetByForum(forumId int, since string, desc bool, limit int) ([]*models.Thread, error) {
-	query := `SELECT t.id, t.title, u.nickname, f.slug, f.id,
-	t.message, t.votes_cnt, t.slug, t.created_at::timestamptz
-	FROM Threads t 
-	JOIN users u ON t.author_id = u.id
-	JOIN forums f ON t.forum_id = f.id
-	WHERE f.id = $1`
-
-	var rows pgx.Rows
+	var tm time.Time
 	var err error
 
-	if since != "" {
-		if desc {
-			query += ` AND t.created_at <= $2::timestamp ORDER BY t.created_at DESC LIMIT $3`
-		} else {
-			query += ` AND t.created_at >= $2::timestamp ORDER BY t.created_at LIMIT $3`
-		}
-
-		rows, err = repo.dbpool.Query(context.Background(),
-			query,
-			forumId,
-			since,
-			limit)
+	if since == "" {
+		tm = time.Time{}
 	} else {
-		query += " ORDER BY t.created_at"
-		if desc {
-			query += " DESC"
+		tm, err = time.Parse("2006-01-02T15:04:05.000-07:00", since)
+		if err != nil {
+			tm, err = time.Parse("2006-01-02T15:04:05.000Z", since)
+			if err != nil {
+				panic(err)
+			}
 		}
-		query += " LIMIT $2"
+	}
 
-		rows, err = repo.dbpool.Query(context.Background(),
-			query,
-			forumId,
-			limit)
+	tm = tm.UTC()
+
+	query := `SELECT t.id, t.title, u.nickname, f.slug,
+					 t.message, t.votes_cnt, t.slug, t.created_at
+				FROM threads t JOIN users u ON t.author_id = u.id
+							  JOIN forums f ON t.forum_id  = f.id
+				WHERE t.forum_id = $1 AND t.created_at`
+
+	if !desc {
+		query += " >= $2 ORDER BY t.created_at"
+	} else {
+		if tm.Equal(time.Time{}) {
+			tm = time.Date(2261, 12, 31, 0, 0, 0, 0, time.Local).UTC()
+		}
+		query += " <= $2 ORDER BY t.created_at DESC"
+	}
+	query += " LIMIT $3"
+
+	rows, err := repo.dbpool.Query(context.Background(), query, forumId, tm, limit)
+	res := []*models.Thread{}
+
+	if err == pgx.ErrNoRows {
+		return res, nil
 	}
 
 	if err != nil {
+		fmt.Println(err)
 		return nil, err
 	}
 
-	threads := []*models.Thread{}
-
 	defer rows.Close()
 
+	var created time.Time
+
 	for rows.Next() {
-		thread := models.Thread{}
-		var created time.Time
+		thread := &models.Thread{}
 		err = rows.Scan(
 			&thread.Id,
 			&thread.Title,
 			&thread.Author,
 			&thread.Forum,
-			&thread.ForumId,
 			&thread.Message,
 			&thread.Votes,
 			&thread.Slug,
@@ -156,13 +160,13 @@ func (repo *ThreadRepository) GetByForum(forumId int, since string, desc bool, l
 		thread.Created = created.Format("2006-01-02T15:04:05.000Z")
 
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println(err)
+			return nil, err
 		}
-
-		threads = append(threads, &thread)
+		res = append(res, thread)
 	}
 
-	return threads, nil
+	return res, nil
 }
 
 func (repo *ThreadRepository) Create(thread *models.Thread, author_id int, forum_id int) error {
