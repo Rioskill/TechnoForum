@@ -107,9 +107,9 @@ func (repo *ThreadRepository) GetByForum(forumId int, since string, desc bool, l
 
 	if since != "" {
 		if desc {
-			query += ` AND t.created_at <= $2 ORDER BY t.created_at DESC LIMIT $3`
+			query += ` AND t.created_at <= $2::timestamp ORDER BY t.created_at DESC LIMIT $3`
 		} else {
-			query += ` AND t.created_at >= $2 ORDER BY t.created_at LIMIT $3`
+			query += ` AND t.created_at >= $2::timestamp ORDER BY t.created_at LIMIT $3`
 		}
 
 		rows, err = repo.dbpool.Query(context.Background(),
